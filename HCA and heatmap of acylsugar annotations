@@ -1,0 +1,61 @@
+# Load necessary libraries
+library(ComplexHeatmap)
+library(circlize)
+library(readxl)
+library(vegan)
+
+# Load data
+data_file <- "c:/users/lilly/desktop/updated_hca.xlsx"
+acylsugar_data <- read_excel(data_file, sheet = 3)
+
+# Extract species names and acylsugar data
+species_names <- as.character(acylsugar_data[[1]])
+acylsugar_matrix <- as.data.frame(acylsugar_data[, -1])
+
+# Ensure numeric conversion and clean data
+acylsugar_matrix[] <- lapply(acylsugar_matrix, as.numeric)
+acylsugar_matrix[is.na(acylsugar_matrix)] <- 0
+acylsugar_matrix[acylsugar_matrix != 1] <- 0
+
+# Convert to matrix and assign species names as rownames
+matrix_for_heatmap <- as.matrix(acylsugar_matrix)
+rownames(matrix_for_heatmap) <- species_names
+
+# Compute Jaccard distance and perform PCoA-based clustering
+jaccard_dist <- vegdist(matrix_for_heatmap, method = "jaccard")
+pcoa_result <- cmdscale(jaccard_dist, k = nrow(matrix_for_heatmap) - 1, eig = TRUE)
+pcoa_dist <- dist(pcoa_result$points[, 1:5])
+row_hclust <- hclust(pcoa_dist, method = "ward.D2")
+dendrogram_species <- as.dendrogram(row_hclust)
+
+# Color mapping: 0 = white (absence), 1 = dark grey (presence)
+col_fun <- colorRamp2(c(0, 1), c("white", "darkgrey"))
+
+# Create heatmap
+ht <- Heatmap(
+  matrix_for_heatmap,
+  col = col_fun,
+  cluster_rows = dendrogram_species,
+  cluster_columns = FALSE,
+  row_names_side = "left",
+  column_names_side = "top",
+  row_title = NULL,
+  show_row_dend = TRUE,
+  show_column_dend = FALSE,
+  row_dend_width = unit(2, "cm"),
+  column_dend_height = unit(2, "cm"),
+  row_names_gp = gpar(fontsize = 14, fontface = "italic"),
+  column_names_gp = gpar(fontsize = 8, fontface = "bold"),
+  row_names_rot = 0,
+  border = TRUE,
+  heatmap_legend_param = list(
+    title = "Acylsugar",
+    labels = c("Absence", "Presence"),
+    at = c(0, 1),
+    legend_gp = gpar(fill = c("white", "darkgrey"))
+  ),
+  row_dend_gp = gpar(lwd = 2)
+)
+
+# Draw heatmap
+draw(ht)
