@@ -1,0 +1,128 @@
+# Load necessary libraries
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(multcompView)
+
+# File path — update this to your actual file location
+file_path <- "C:/Users/Lilly/Desktop/leaf_features.xlsx"
+
+# Get all sheet names
+sheet_names <- excel_sheets(file_path)
+
+# Step 1: Read and combine all sheets ------------------------------------------
+all_data <- list()
+
+for (sheet in sheet_names) {
+  # Read species and tissue info from A1 and B1
+  species <- read_excel(file_path, sheet = sheet, range = "A1", col_names = FALSE)[[1]]
+  tissue  <- read_excel(file_path, sheet = sheet, range = "B1", col_names = FALSE)[[1]]
+  
+  # Read data skipping first row
+  df <- read_excel(file_path, sheet = sheet, skip = 1, col_names = TRUE)
+  
+  # Create metabolite ID including exact RT, m/z, and type (no rounding)
+  df <- df %>%
+    mutate(
+      metabolite_exact = paste0("mz", `m/z`, "_RT", `RT(min)`, "_", type)
+    )
+  
+  # Add sample metadata
+  df <- df %>%
+    mutate(
+      Sample = sheet,
+      Species = species,
+      Tissue = tissue
+    )
+  
+  all_data[[sheet]] <- df
+}
+
+# Combine all data into one dataframe
+combined_data <- bind_rows(all_data)
+
+# Step 2: Calculate entropy per sample ------------------------------------------
+calc_entropy_sample <- function(df_sample) {
+  presence <- df_sample %>%
+    distinct(metabolite_exact) %>%
+    mutate(present = 1)
+  
+  n_metabolites <- nrow(presence)
+  if (n_metabolites > 0) {
+    entropy_val <- log2(n_metabolites)
+  } else {
+    entropy_val <- NA_real_
+  }
+  
+  return(entropy_val)
+}
+
+entropy_per_sample <- combined_data %>%
+  group_by(Sample, Species, Tissue) %>%
+  group_modify(~{
+    entropy_val <- calc_entropy_sample(.x)
+    tibble(Entropy = entropy_val)
+  }) %>%
+  ungroup()
+
+# Step 3: Order tissues by mean entropy -----------------------------------------
+tissue_order <- entropy_per_sample %>%
+  group_by(Tissue) %>%
+  summarise(mean_entropy = mean(Entropy, na.rm = TRUE)) %>%
+  arrange(mean_entropy) %>%
+  pull(Tissue)
+
+entropy_per_sample$Tissue <- factor(entropy_per_sample$Tissue, levels = tissue_order)
+
+# Optional: Order species too
+species_order <- entropy_per_sample %>%
+  group_by(Species) %>%
+  summarise(mean_entropy = mean(Entropy, na.rm = TRUE)) %>%
+  arrange(mean_entropy) %>%
+  pull(Species)
+
+entropy_per_sample$Species <- factor(entropy_per_sample$Species, levels = species_order)
+
+# Step 4: Statistical testing and significance letters -------------------------
+
+# Perform ANOVA
+aov_res <- aov(Entropy ~ Tissue, data = entropy_per_sample)
+
+# Tukey HSD post-hoc test
+tukey <- TukeyHSD(aov_res)
+
+# Get significance letters
+tukey_letters <- multcompLetters4(aov_res, tukey)
+
+letters_df <- data.frame(
+  Tissue = names(tukey_letters$Tissue$Letters),
+  Letters = tukey_letters$Tissue$Letters
+)
+
+# Calculate max entropy per Tissue for label positioning
+plot_data <- entropy_per_sample %>%
+  group_by(Tissue) %>%
+  summarise(max_entropy = max(Entropy, na.rm = TRUE)) %>%
+  left_join(letters_df, by = "Tissue")
+
+# Step 5: Plot Shannon entropy per tissue with letters --------------------------
+
+ggplot(entropy_per_sample, aes(x = Tissue, y = Entropy)) +
+  geom_boxplot(outlier.shape = NA, fill = "lightgray", color = "black", width = 0.6) +  # No dots
+  geom_text(data = plot_data, aes(x = Tissue, y = max_entropy + 0.1, label = Letters),
+            size = 8, fontface = "bold", color = "black") +
+  theme_minimal() +
+  labs(
+    title = "Shannon Entropy by Tissue",
+    x = "Tissue",
+    y = "Shannon Entropy"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1, color = "black", face = "bold", size = 20),
+    axis.text.y = element_text(color = "black", face = "bold", size = 16),
+    axis.title.x = element_text(color = "black", face = "bold", size = 16),
+    axis.title.y = element_text(color = "black", face = "bold", size = 16),
+    plot.title = element_text(face = "bold", size = 18, hjust = 0.5),
+    plot.margin = margin(t = 10, r = 10, b = 10, l = 30)
+  )
