@@ -12,30 +12,25 @@ file_path <- "C:/Users/Lilly/Desktop/leaf_features.xlsx"
 sheet_names <- excel_sheets(file_path)
 
 # Step 1: Read and combine all sheets ------------------------------------------
+
 all_data <- list()
 
 for (sheet in sheet_names) {
   # Read species and tissue info from A1 and B1
   species <- read_excel(file_path, sheet = sheet, range = "A1", col_names = FALSE)[[1]]
   tissue  <- read_excel(file_path, sheet = sheet, range = "B1", col_names = FALSE)[[1]]
-  
+
   # Read data skipping first row
   df <- read_excel(file_path, sheet = sheet, skip = 1, col_names = TRUE)
-  
+
   # Create metabolite ID including exact RT, m/z, and type (no rounding)
   df <- df %>%
-    mutate(
-      metabolite_exact = paste0("mz", `m/z`, "_RT", `RT(min)`, "_", type)
-    )
-  
+    mutate(metabolite_exact = paste0("mz", `m/z`, "RT", `RT(min)`, "", type))
+
   # Add sample metadata
   df <- df %>%
-    mutate(
-      Sample = sheet,
-      Species = species,
-      Tissue = tissue
-    )
-  
+    mutate(Sample = sheet, Species = species, Tissue = tissue)
+
   all_data[[sheet]] <- df
 }
 
@@ -43,18 +38,20 @@ for (sheet in sheet_names) {
 combined_data <- bind_rows(all_data)
 
 # Step 2: Calculate entropy per sample ------------------------------------------
+
 calc_entropy_sample <- function(df_sample) {
   presence <- df_sample %>%
     distinct(metabolite_exact) %>%
     mutate(present = 1)
-  
+
   n_metabolites <- nrow(presence)
+
   if (n_metabolites > 0) {
     entropy_val <- log2(n_metabolites)
   } else {
     entropy_val <- NA_real_
   }
-  
+
   return(entropy_val)
 }
 
@@ -67,6 +64,7 @@ entropy_per_sample <- combined_data %>%
   ungroup()
 
 # Step 3: Order tissues by mean entropy -----------------------------------------
+
 tissue_order <- entropy_per_sample %>%
   group_by(Tissue) %>%
   summarise(mean_entropy = mean(Entropy, na.rm = TRUE)) %>%
@@ -109,7 +107,7 @@ plot_data <- entropy_per_sample %>%
 # Step 5: Plot Shannon entropy per tissue with letters --------------------------
 
 ggplot(entropy_per_sample, aes(x = Tissue, y = Entropy)) +
-  geom_boxplot(outlier.shape = NA, fill = "lightgray", color = "black", width = 0.6) +  # No dots
+  geom_boxplot(outlier.shape = NA, fill = "lightgray", color = "black", width = 0.6) +
   geom_text(data = plot_data, aes(x = Tissue, y = max_entropy + 0.1, label = Letters),
             size = 8, fontface = "bold", color = "black") +
   theme_minimal() +
