@@ -1,0 +1,95 @@
+# Load necessary libraries
+library(readxl)
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+library(scales)
+
+# Load the data while keeping the original order
+calyx_data <- read_excel("C:/Users/Lilly/desktop/plot.xlsx", sheet = 1, .name_repair = "minimal")
+fruit_data <- read_excel("C:/Users/Lilly/desktop/plot.xlsx", sheet = 2, .name_repair = "minimal")
+leaf_data  <- read_excel("C:/Users/Lilly/desktop/plot.xlsx", sheet = 3, .name_repair = "minimal")
+
+# Helper function to process data
+process_data <- function(data, tissue) {
+  data %>%
+    mutate(
+      Tissue = tissue,
+      Abundance = ifelse(Abundance == 0, NA, Abundance),
+      Label = ifelse(is.na(Abundance), "ND", ""),
+      Abundance = pmin(Abundance, 100),
+      Species = ifelse(Species == "P. solanaceae", "P. solanacea", Species),
+      Species = factor(Species, levels = rev(unique(Species)))
+    )
+}
+
+# Process each tissue
+calyx_data <- process_data(calyx_data, "Calyx")
+fruit_data <- process_data(fruit_data, "Fruit")
+leaf_data  <- process_data(leaf_data, "Leaf")
+
+# Define colors for each tissue
+color_schemes <- list(
+  Calyx = list(low = "#f8bbd0", high = "#880e4f"),
+  Fruit = list(low = "#bbdefb", high = "#0d47a1"),
+  Leaf  = list(low = "#c8e6c9", high = "#1b5e20")
+)
+
+# Function to create heatmap and bubble plot for a tissue
+create_plots <- function(data, tissue) {
+  max_species <- length(unique(data$Species))
+
+  # Heatmap
+  heatmap <- ggplot(data, aes(x = 1, y = Species, fill = Abundance)) +
+    geom_tile(color = "black") +
+    geom_text(aes(label = Label), color = "black") +
+    scale_fill_gradient(
+      low = color_schemes[[tissue]]$low,
+      high = color_schemes[[tissue]]$high,
+      na.value = "white",
+      guide = guide_colorbar(reverse = TRUE)
+    ) +
+    labs(title = paste(tissue, "Heatmap"), fill = "Abundance") +
+    coord_cartesian(clip = "off") +
+    theme_minimal() +
+    theme(
+      axis.title = element_blank(),
+      axis.text.x = element_blank(),
+      axis.ticks = element_blank(),
+      axis.text.y = element_text(face = "bold.italic", size = 12, color = "black"),
+      plot.title = element_text(hjust = 0.5),
+      plot.margin = margin(5, 20, 5, 5)
+    )
+
+  # Bubble plot
+  bubble <- ggplot(data, aes(x = 1, y = Species)) +
+    geom_point(data = filter(data, Number > 0), aes(size = Number), color = color_schemes[[tissue]]$high) +
+    geom_blank(data = filter(data, Number == 0)) +
+    scale_size_continuous(breaks = c(10, 20, 30), range = c(2, 8)) +
+    labs(title = paste(tissue, "Bubble Plot"), size = "Acylsugar Number") +
+    coord_cartesian(clip = "off") +
+    theme_minimal() +
+    theme(
+      axis.title = element_blank(),
+      axis.text.x = element_blank(),
+      axis.ticks = element_blank(),
+      axis.text.y = element_text(face = "bold.italic", size = 12, color = "black"),
+      panel.grid = element_blank(),
+      plot.title = element_text(hjust = 0.5),
+      plot.margin = margin(5, 20, 5, 5)
+    )
+
+  # Return combined plot with equal widths
+  heatmap + bubble + plot_layout(widths = c(1, 1))
+}
+
+# Create plots for each tissue
+calyx_plots <- create_plots(calyx_data, "Calyx")
+fruit_plots <- create_plots(fruit_data, "Fruit")
+leaf_plots  <- create_plots(leaf_data, "Leaf")
+
+# Combine all plots vertically with consistent layout
+final_plot <- calyx_plots / fruit_plots / leaf_plots + plot_layout(heights = c(1, 1, 1))
+
+# Display the plot
+print(final_plot)
