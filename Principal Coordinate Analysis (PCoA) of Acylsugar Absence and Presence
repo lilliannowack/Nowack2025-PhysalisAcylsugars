@@ -1,0 +1,63 @@
+# Load required libraries
+library(ggplot2)
+library(readxl)
+library(dplyr)
+library(vegan)
+library(ape)
+
+# Load the data (update path as needed)
+data <- read_excel("C:/Users/Lilly/desktop/updated_hca.xlsx", sheet = 3)
+
+# Remove the first row if it's just headers
+data <- data[-1, ]
+
+# Define the first column as species names and the rest as annotation data
+species <- data[[1]]
+annotations_data <- data[, -1]
+
+# Convert data to numeric and replace NA with 0
+annotations_data <- annotations_data %>%
+  mutate(across(everything(), ~ as.numeric(as.character(.)))) %>%
+  replace(is.na(.), 0)
+
+# Remove columns with all zeros
+annotations_data <- annotations_data[, colSums(annotations_data) != 0]
+
+# Calculate Jaccard distance for binary data
+distance_matrix <- vegdist(annotations_data, method = "jaccard", binary = TRUE)
+
+# Perform PCoA
+pcoa_result <- pcoa(distance_matrix)
+pcoa_df <- as.data.frame(pcoa_result$vectors)
+pcoa_df$Species <- species
+
+# Define custom colors and shapes for species
+colors <- c(
+  "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b",
+  "#e377c2", "#7f7f7f", "#bcbd22", "#17becf", "#aec7e8", "#ffbb78"
+)
+
+shapes <- c(rep(21, 12), rep(24, 12), rep(22, 6), rep(25, 6))
+
+# Create the PCoA plot (no ellipses, no lines through shape legends)
+ggplot(pcoa_df, aes(x = Axis.1, y = Axis.2, color = Species, fill = Species, shape = Species)) +
+  geom_point(size = 4) +
+  scale_color_manual(values = rep(colors, length.out = length(unique(species)))) +
+  scale_fill_manual(values = rep(colors, length.out = length(unique(species)))) +
+  scale_shape_manual(values = shapes[1:length(unique(species))]) +
+  labs(
+    title = "PCoA of Acylsugar Annotations by Species",
+    x = "PCoA1",
+    y = "PCoA2"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    legend.text = element_text(face = "italic", size = 14),
+    legend.title = element_text(size = 16, face = "bold"),
+    axis.title = element_text(size = 14, face = "bold")
+  ) +
+  guides(
+    color = guide_legend(title = "Species"),
+    shape = guide_legend(title = "Species", override.aes = list(linetype = 0))
+  )
